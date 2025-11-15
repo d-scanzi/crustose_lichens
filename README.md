@@ -9,9 +9,9 @@ Generative art project - It uses a cellular automata to simulate populations of 
 ## EXAMPLES
 
 ![](images/lichen_3.svg)
-![]("images/lichen_4.svg")
-![]("images/lichen_5.svg")
-![]("images/lichen_12.svg")
-![]("images/lichen_19.svg")
-![]("images/lichen_22.svg")
-![]("images/lichen_236.svg")
+![](images/lichen_4.svg)
+![](images/lichen_5.svg)
+![](images/lichen_12.svg)
+![](images/lichen_19.svg)
+![](images/lichen_22.svg)
+![](images/lichen_236.svg)
