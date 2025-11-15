@@ -18,11 +18,11 @@ seed_grid <- function(grid, region) {
 }
 
 # Rotate a list of seed coordinates around a pivot point
-rotate_point <- function(pt, pivot, angle_degrees) {
+rotate_point <- function(point_coordinates, pivot_coordinates, angle_degrees) {
   angle_rad <- angle_degrees * (pi/180)
   rotation_matrix <- matrix(c(cos(angle_rad), -sin(angle_rad), 
                               sin(angle_rad),  cos(angle_rad)), nrow=2, byrow=TRUE)
-  as.vector(rotation_matrix %*% (pt - pivot) + pivot)
+  as.vector(rotation_matrix %*% (point_coordinates - pivot_coordinates) + pivot_coordinates)
 }
 
 # Generate triangular seed

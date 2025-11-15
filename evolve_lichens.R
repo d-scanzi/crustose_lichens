@@ -1,94 +1,65 @@
+monrose_kernel <- matrix(c(1,1,1,
+                           1,0,1,
+                           1,1,1), nrow=3, byrow=TRUE)
+
 ## NEIGHBOURS
-check_neighbours <- function(grid, coordinates, wrap = TRUE) {
-  grid_row_number    <- nrow(grid)
-  grid_column_number <- ncol(grid)
-  
-  if (wrap) {
-    row_indices <- (coordinates[1] + c(-1, 0, 1) - 1) %% grid_row_number + 1
-    col_indices <- (coordinates[2] + c(-1, 0, 1) - 1) %% grid_column_number + 1
-  } else {
-    row_indices <- coordinates[1] + c(-1, 0, 1)
-    col_indices <- coordinates[2] + c(-1, 0, 1)
-    
-    # Only keep indices that are within bounds
-    row_indices <- row_indices[row_indices >= 1 & row_indices <= grid_row_number]
-    col_indices <- col_indices[col_indices >= 1 & col_indices <= grid_column_number]
-  }
-  
-  neighborhood <- grid[row_indices, col_indices, drop = FALSE]
-  
-  # Subtract the value of the central cell if it's included
-  total <- sum(neighborhood)
-  if (coordinates[1] %in% row_indices && coordinates[2] %in% col_indices) {
-    total <- total - grid[coordinates[1], coordinates[2]]
-  }
-  
-  total
+count_neighbours <- function(grid, wrap=TRUE) {
+  mode_type <- if (wrap) "circular" else "constant"
+  neighbour_matrix <- filter2(grid, monrose_kernel, boundary=mode_type)
+  return(neighbour_matrix)
 }
 
 ## EVOLVE COLONY
 
-# Update single cell
-update_cell <- function(grid, coordinates, survive, born, wrap=TRUE) {
-  # Check neighbours
-  
-  cell_neighbours <-check_neighbours(grid, coordinates, wrap=wrap)
-  if (grid[coordinates[1], coordinates[2]] == 1) {
-    if (!cell_neighbours %in% survive) {
-      return(0)
-    }
-  } else {
-    if (cell_neighbours %in% born) {
-      return(1)
-    }
-  }
-  
-  return(grid[coordinates[1], coordinates[2]])
-}
-
 # Update entire grid once
 new_generation <- function(grid, survive, born, wrap=TRUE) {
-  row_number    <- nrow(grid)
-  column_number <- ncol(grid)
-  new_grid <- grid
-  for (row in 1:row_number) {
-    for (column in 1:column_number) {
-      new_grid[row, column] <- update_cell(grid, c(row, column), survive=survive, born=born, wrap=wrap)
-    }
-  }
+  neighbours <- round(count_neighbours(grid, wrap=wrap))
+  
+  grid_rows    <- nrow(grid)
+  grid_columns <- ncol(grid)
+  
+  survive_mask <- (grid == 1) & (neighbours %in% survive)
+  born_mask    <- (grid == 0) & (neighbours %in% born)
+  
+  new_grid <- matrix(0, nrow = nrow(grid), ncol = ncol(grid))
+  new_grid[survive_mask | born_mask] <- 1
+  
   return(new_grid)
 }
 
 # Evolve grid for N generations
 evolve <- function(grid, generations, survive=c(2,3), born=c(3), wrap=TRUE) {
   current_grid <- grid
-  all_grids    <- list(grid)
+  all_grids    <- array(rep(0, length(grid)*generations), c(nrow(grid), ncol(grid), generations))
   for (generation in 1:generations) {
     current_grid <- new_generation(current_grid, survive=survive, born=born, wrap=wrap)
-    all_grids <- append(all_grids, list(current_grid))
+    all_grids[, , generation] <- current_grid
   }
   return(list("final_generation"=current_grid, "all_generations"=all_grids))
 }
 
 # Smooth results across generations
-smooth_generations <- function(generation_list) {
-  generations <- length(generation_list)
-  generation_data <- list()
-  for (generation in 1:generations) {
-    current_grid <- generation_list[[generation]]
-    current_grid_long <- melt(current_grid)
-    current_grid_long["generation"] <- generation
-    generation_data <- append(generation_data, list(current_grid_long))
-  }
-  
-  generation_data_df <- Reduce(rbind, generation_data)
-  
-  evolution_smoothed <- generation_data_df %>% 
-    group_by(Var1, Var2) %>% 
-    summarise(result = mean(value)) %>% 
-    ungroup()
-  
+smooth_generations_mean <- function(generation_matrix) {
+  generations_n         <- dim(generation_matrix)[3]
+  generations_weights   <- 1:generations_n
+  evolution_smoothed    <- apply(generation_matrix, c(1, 2), stats::weighted.mean, w=generations_weights)
   return(evolution_smoothed)
+}
+
+smooth_generations_conv <- function(generation_matrix, sigma = 3) {
+  time_points  <- dim(generation_matrix)[3]
+  kernel       <- dnorm(seq(-3, 3, length.out = time_points), sd = sigma)
+  kernel       <- kernel / sum(kernel)
+  weighted_sum <- apply(generation_matrix, c(1, 2), function(x) sum(x * kernel))
+  return(weighted_sum)
+}
+
+smooth_generations <- function(generation_matrix, type="mean") {
+  if (type == "mean") {
+    smooth_generations_mean(generation_matrix)
+  } else if (type == "conv") {
+    smooth_generations_conv(generation_matrix)
+  }
 }
 
 ## MULTIPLE POPULATIONS
@@ -116,11 +87,12 @@ generate_colonies <- function(shapes, number, grid_dim) {
   return(colonies)
 }
 
-multiple_pupulations <- function(grid, populations, generations, survive, born, colours, wrap=TRUE) {
+multiple_pupulations <- function(grid, populations, generations, survive, born, colours, smooth_type="mean", wrap=TRUE) {
   final_generations <- list()
   
   grid_rows    <- nrow(grid)
   grid_columns <- ncol(grid)
+
   for (population in 1:length(populations)) {
     population_first_generation <- grid
     # seed current population
@@ -129,22 +101,25 @@ multiple_pupulations <- function(grid, populations, generations, survive, born, 
     # Evolve population
     population_evolution <- evolve(population_first_generation, generations[population], survive=survive, born=born, wrap=wrap)
     # Smooth across generations
-    population_evolution_smoothed <- smooth_generations(population_evolution$all_generations)
+    population_evolution_smoothed <- smooth_generations(population_evolution$all_generations, type=smooth_type)
+    
     # Add color information
-    min_value <- min(population_evolution_smoothed$result)
-    max_value <- max(population_evolution_smoothed$result)
+    min_value <- min(population_evolution_smoothed)
+    max_value <- max(population_evolution_smoothed)
     
     palette <- scales::pal_seq_gradient(low=colours[[population]][1], high=colours[[population]][2])
     colour_mapper <- scales::col_numeric(palette=palette, domain=c(min_value, max_value))
     
+    population_evolution_smoothed <- reshape2::melt(population_evolution_smoothed)
+    
     population_evolution_smoothed <- population_evolution_smoothed %>%
-      mutate(colour     = colour_mapper(result),
+      mutate(colour     = colour_mapper(value),
              population = population)
     # Store info
     final_generations <- append(final_generations, list(population_evolution_smoothed))
     
   }
   
-  evolution_data <- Reduce(rbind, final_generations)
+  evolution_data <- data.table::rbindlist(final_generations)
   return(evolution_data)
 }
