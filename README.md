@@ -1,4 +1,6 @@
-## CRUSTOSE LICHENS
+# CRUSTOSE LICHENS
+
+[CC BY 4.0](LICENCE)
 
 Generative art project - It uses a cellular automata to simulate populations of [crustose lichens](https://en.wikipedia.org/wiki/Crustose_lichen). 
 
